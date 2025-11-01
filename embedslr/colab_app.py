@@ -44,6 +44,7 @@ def _ensure_aux_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def _pipeline(df: pd.DataFrame, query: str, provider: str, model: str,
               out: Path, top_n: int | None) -> Path:
+    """Original single-model pipeline."""
     from .io import autodetect_columns, combine_title_abstract
     from .embeddings import get_embeddings
     from .similarity import rank_by_cosine
@@ -78,45 +79,210 @@ def _pipeline(df: pd.DataFrame, query: str, provider: str, model: str,
     return zf
 
 
+def _multi_pipeline(
+    df: pd.DataFrame,
+    query: str,
+    models_config: List[Dict[str, str]],
+    out: Path,
+    top_n: int = 17
+) -> Path:
+    """New multi-model pipeline."""
+    from .multi_embedding import multi_model_analysis
+    
+    df = _ensure_aux_columns(df.copy())
+    
+    # Run multi-model analysis
+    results = multi_model_analysis(
+        df=df,
+        query=query,
+        models_config=models_config,
+        top_n=top_n,
+        output_dir=out,
+    )
+    
+    # Save model rankings
+    rankings_path = out / "model_rankings.csv"
+    results["model_rankings"].to_csv(rankings_path, index=False)
+    
+    # Save hierarchical analysis
+    hier_path = out / "hierarchical_analysis.csv"
+    results["hierarchical_analysis"].to_csv(hier_path, index=False)
+    
+    # Save publications grouped by consensus
+    groups_dir = out / "consensus_groups"
+    groups_dir.mkdir(exist_ok=True)
+    
+    for n_models, group_df in results["hierarchical_groups"].items():
+        group_path = groups_dir / f"selected_by_{n_models}_models.csv"
+        group_df.to_csv(group_path, index=False)
+    
+    # Save individual model selections
+    models_dir = out / "model_selections"
+    models_dir.mkdir(exist_ok=True)
+    
+    for model_name, df_sel in results["model_selections"].items():
+        safe_name = model_name.replace("::", "_").replace("/", "_")
+        model_path = models_dir / f"{safe_name}.csv"
+        df_sel.to_csv(model_path, index=False)
+    
+    # Create comprehensive report
+    report_lines = [
+        "=" * 80,
+        "MULTI-MODEL SYSTEMATIC LITERATURE REVIEW REPORT",
+        "=" * 80,
+        "",
+        f"Query: {query}",
+        f"Number of models: {len(models_config)}",
+        f"Top N per model: {top_n}",
+        "",
+        "=" * 80,
+        "MODEL RANKINGS",
+        "=" * 80,
+        "",
+        results["model_rankings"].to_string(index=False),
+        "",
+        "=" * 80,
+        "HIERARCHICAL GROUP ANALYSIS",
+        "=" * 80,
+        "",
+        results["hierarchical_analysis"].to_string(index=False),
+        "",
+        "=" * 80,
+        "PUBLICATIONS BY CONSENSUS LEVEL",
+        "=" * 80,
+        "",
+    ]
+    
+    for n_models in sorted(results["hierarchical_groups"].keys(), reverse=True):
+        count = len(results["hierarchical_groups"][n_models])
+        report_lines.append(f"Selected by {n_models} model(s): {count} publications")
+    
+    report_lines.append("")
+    report_lines.append("=" * 80)
+    report_lines.append("INTERPRETATION GUIDELINES")
+    report_lines.append("=" * 80)
+    report_lines.append("")
+    report_lines.append("• Publications selected by MORE models (≥3): Most thematically coherent")
+    report_lines.append("• Publications selected by FEWER models (1-2): Unique perspectives or edge cases")
+    report_lines.append("• Optimal number of models: 4 (balances diversity and coherence)")
+    report_lines.append("")
+    
+    report_path = out / "multi_model_report.txt"
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(report_lines))
+    
+    # Create ZIP with all results
+    zf = out / "embedslr_multi_results.zip"
+    with zipfile.ZipFile(zf, "w", zipfile.ZIP_DEFLATED) as z:
+        # Add main files
+        z.write(rankings_path, "model_rankings.csv")
+        z.write(hier_path, "hierarchical_analysis.csv")
+        z.write(report_path, "multi_model_report.txt")
+        
+        # Add consensus groups
+        for n_models in results["hierarchical_groups"].keys():
+            group_path = groups_dir / f"selected_by_{n_models}_models.csv"
+            z.write(group_path, f"consensus_groups/selected_by_{n_models}_models.csv")
+        
+        # Add model selections
+        for model_name in results["model_selections"].keys():
+            safe_name = model_name.replace("::", "_").replace("/", "_")
+            model_path = models_dir / f"{safe_name}.csv"
+            z.write(model_path, f"model_selections/{safe_name}.csv")
+        
+        # Add visualizations
+        for chart_path in results["radar_charts"]:
+            rel_path = chart_path.relative_to(out)
+            z.write(chart_path, str(rel_path))
+        
+        for chart_path in results["comparison_charts"]:
+            rel_path = chart_path.relative_to(out)
+            z.write(chart_path, str(rel_path))
+    
+    return zf
+
+
 # interactive Colab
 def _colab_ui(out_dir: Path):
     from google.colab import files  # type: ignore
 
     display(HTML(
-        "<h3>EmbedSLR – interactive upload</h3>"
+        "<h3>EmbedSLR – Interactive Upload</h3>"
         "<ol><li><b>Browse</b> → CSV</li><li>Wait for ✅</li>"
         "<li>Answer prompts in console</li></ol>"
     ))
     up = files.upload()
     if not up:
-        display(HTML("<b style='color:red'>abort – no file</b>")); return
+        display(HTML("<b style='color:red'>Abort – no file</b>"))
+        return
     name, data = next(iter(up.items()))
     df = pd.read_csv(io.BytesIO(data))
-    display(HTML(f"✅ Loaded <code>{name}</code> ({len(df)} rows)<br>"))
+    display(HTML(f"✅ Loaded <code>{name}</code> ({len(df)} rows)<br>"))
 
-    q = input("❓ Research query: ").strip()
-    provs = list(_models())
-    print("Providers:", provs)
-    prov = input(f"Provider [default={provs[0]}]: ").strip() or provs[0]
+    # Ask for mode
+    mode = input("🔧 Mode [single/multi]: ").strip().lower() or "single"
+    
+    q = input("❓ Research query: ").strip()
+    
+    if mode == "multi":
+        # Multi-model mode
+        print("\n📚 Multi-Model Mode")
+        print("=" * 50)
+        
+        n_models_raw = input("How many models to use? [4]: ").strip()
+        n_models = int(n_models_raw) if n_models_raw else 4
+        
+        models_config = []
+        provs = list(_models())
+        
+        for i in range(n_models):
+            print(f"\n--- Model {i+1}/{n_models} ---")
+            print("Providers:", ", ".join(provs))
+            prov = input(f"Provider [default={provs[0]}]: ").strip() or provs[0]
+            
+            print(f"Models for {prov} (showing first 10):")
+            for m in _models()[prov][:10]:
+                print("  •", m)
+            mod = input("Model [ENTER=1st]: ").strip() or _models()[prov][0]
+            
+            models_config.append({"provider": prov, "model": mod})
+            
+            # API key if needed
+            key = input(f"API key for {prov} (ENTER skip): ").strip()
+            if key and (ev := _env_var(prov)):
+                os.environ[ev] = key
+        
+        n_raw = input("\n🔢 Top‑N per model [17]: ").strip()
+        top_n = int(n_raw) if n_raw else 17
+        
+        print("\n⏳ Running multi-model analysis...")
+        zip_tmp = _multi_pipeline(df, q, models_config, out_dir, top_n)
+        
+    else:
+        # Single-model mode (original)
+        print("\n📖 Single-Model Mode")
+        provs = list(_models())
+        print("Providers:", provs)
+        prov = input(f"Provider [default={provs[0]}]: ").strip() or provs[0]
 
-    print("Models for", prov)
-    for m in _models()[prov]:
-        print("  •", m)
-    mod = input("Model [ENTER=1st]: ").strip() or _models()[prov][0]
+        print("Models for", prov)
+        for m in _models()[prov]:
+            print("  •", m)
+        mod = input("Model [ENTER=1st]: ").strip() or _models()[prov][0]
 
-    n_raw = input("🔢 Top‑N for metrics [ENTER=all]: ").strip()
-    top_n = int(n_raw) if n_raw else None
+        n_raw = input("🔢 Top‑N for metrics [ENTER=all]: ").strip()
+        top_n = int(n_raw) if n_raw else None
 
-    key = input("API key (ENTER skip): ").strip()
-    if key and (ev := _env_var(prov)):
-        os.environ[ev] = key
+        key = input("API key (ENTER skip): ").strip()
+        if key and (ev := _env_var(prov)):
+            os.environ[ev] = key
 
-    print("⏳ Computing …")
-    zip_tmp = _pipeline(df, q, prov, mod, out_dir, top_n)
+        print("⏳ Computing…")
+        zip_tmp = _pipeline(df, q, prov, mod, out_dir, top_n)
 
     dst = Path.cwd() / zip_tmp.name
     shutil.copy(zip_tmp, dst)
-    print("✅ Finished – downloading ZIP")
+    print("✅ Finished – downloading ZIP")
     files.download(str(dst))
 
 
@@ -125,15 +291,40 @@ def _cli(out_dir: Path):
     print("== EmbedSLR CLI ==")
     csv_p = Path(input("CSV path: ").strip())
     df = pd.read_csv(csv_p)
+    
+    mode = input("Mode [single/multi]: ").strip().lower() or "single"
     q = input("Query: ").strip()
-    prov = input("Provider [sbert]: ").strip() or "sbert"
-    mod = input("Model [ENTER=default]: ").strip() or _models()[prov][0]
-    n_raw = input("Top‑N [ENTER=all]: ").strip()
-    top_n = int(n_raw) if n_raw else None
-    key = input("API key [skip]: ").strip()
-    if key and (ev := _env_var(prov)):
-        os.environ[ev] = key
-    z = _pipeline(df, q, prov, mod, out_dir, top_n)
+    
+    if mode == "multi":
+        n_models_raw = input("Number of models [4]: ").strip()
+        n_models = int(n_models_raw) if n_models_raw else 4
+        
+        models_config = []
+        for i in range(n_models):
+            print(f"\n--- Model {i+1} ---")
+            prov = input("Provider [sbert]: ").strip() or "sbert"
+            mod = input(f"Model [default]: ").strip() or _models()[prov][0]
+            models_config.append({"provider": prov, "model": mod})
+            
+            key = input(f"API key for {prov} [skip]: ").strip()
+            if key and (ev := _env_var(prov)):
+                os.environ[ev] = key
+        
+        n_raw = input("Top‑N per model [17]: ").strip()
+        top_n = int(n_raw) if n_raw else 17
+        
+        z = _multi_pipeline(df, q, models_config, out_dir, top_n)
+        
+    else:
+        prov = input("Provider [sbert]: ").strip() or "sbert"
+        mod = input("Model [ENTER=default]: ").strip() or _models()[prov][0]
+        n_raw = input("Top‑N [ENTER=all]: ").strip()
+        top_n = int(n_raw) if n_raw else None
+        key = input("API key [skip]: ").strip()
+        if key and (ev := _env_var(prov)):
+            os.environ[ev] = key
+        z = _pipeline(df, q, prov, mod, out_dir, top_n)
+    
     print("ZIP saved:", z)
 
 
