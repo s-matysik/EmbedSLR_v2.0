@@ -1,23 +1,29 @@
 # Example Dataset and Results
 This folder contains an export from Scopus
 data_Scopus_CSR_influence_consumer_behavior.csv
-generated on 26 January 2025, containing 597 records matching the query:
+generated on 09.10.2025, containing 271 records matching the query:
 
-(“CSR influence” OR “Corporate Social Responsibility influence”) AND “consumer behavior”
+TITLE-ABS-KEY("impact" AND "AI" AND "young" AND "health")
 
-The dataset was processed using EmbedSLR 1.0.0 in Google Colab, with the SBERT backend and the model all-distilroberta-v1.
-The bibliometric audit was limited to the Top 30 resultsfor the research question at hand: 
+The dataset was processed using EmbedSLR 2.0 in Google Colab.
+Four embedding models were selected to represent different architectures:
+•	sentence-transformers/all-mpnet-base-v2: MPNet architecture, 109M parameters
+•	sentence-transformers/all-distilroberta-v1: Distilled RoBERTa, 82M parameters
+•	sentence-transformers/all-MiniLM-L6-v2: Distilled BERT, 22M parameters
+•	openai/text-embedding-ada-002: Proprietary transformer, 1536-dim embeddings
 
-Does corporate social responsibility (CSR) influence consumer behavior?
+The bibliometric audit was limited to the Top 40 resultsfor the research problem at hand: 
+
+"The impact of AI on young peoples health"
 
 The computation took approximately 4 minutes to complete.
-Output files are available in the examples/results/ directory.
+Output files are available in the examples/AI_youth_health/embedslr_multi_results.zip
 
 This process can be replicated, and the results independently verified, when testing the software.
 
 ## Installation Google Colab 
 
 ```bash
-!pip install git+https://github.com/s-matysik/EmbedSLR.git
+!pip install git+https://github.com/s-matysik/EmbedSLR_v2.0.git
 from embedslr.colab_app import run
 run()
