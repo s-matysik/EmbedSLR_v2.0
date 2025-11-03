@@ -38,17 +38,17 @@ def _ensure_sbert_installed() -> None:
         importlib.import_module("sentence_transformers")
     except ModuleNotFoundError:
         ans = _ask(
-            "📦  Brak biblioteki 'sentence‑transformers'. Zainstalować teraz? (y/N)",
+            "📦  Missing library 'sentence-transformers'. Install now? (y/N)",
             "N",
         ).lower()
         if ans == "y":
-            print("⏳  Instaluję 'sentence‑transformers'…")
+            print("⏳  Installing 'sentence-transformers'…")
             subprocess.check_call(
                 [sys.executable, "-m", "pip", "install", "--user", "--quiet", "sentence-transformers"]
             )
-            print("✅  Instalacja zakończona.\n")
+            print("✅  Installation complete.\n")
         else:
-            sys.exit("❌  Provider 'sbert' wymaga biblioteki 'sentence‑transformers'.")
+            sys.exit("❌  The 'sbert' provider requires the 'sentence-transformers' library.")
 
 
 def _ensure_matplotlib_installed() -> None:
@@ -57,17 +57,17 @@ def _ensure_matplotlib_installed() -> None:
         importlib.import_module("matplotlib")
     except ModuleNotFoundError:
         ans = _ask(
-            "📦  Brak biblioteki 'matplotlib' (wymagana do wizualizacji). Zainstalować? (y/N)",
+            "📦  Missing library 'matplotlib' (required for visualizations). Install now? (y/N)",
             "N",
         ).lower()
         if ans == "y":
-            print("⏳  Instaluję 'matplotlib'…")
+            print("⏳  Installing 'matplotlib'…")
             subprocess.check_call(
                 [sys.executable, "-m", "pip", "install", "--user", "--quiet", "matplotlib"]
             )
-            print("✅  Instalacja zakończona.\n")
+            print("✅  Installation complete.\n")
         else:
-            print("⚠️  Wizualizacje nie będą dostępne bez matplotlib.")
+            print("⚠️  Visualizations will not be available without matplotlib.")
 
 
 def _models() -> Dict[str, List[str]]:
@@ -119,12 +119,12 @@ def _get_or_download_local_sbert(model_name: str) -> Path:
     """
     local_dir = _local_model_dir(model_name)
     if local_dir.exists():
-        print(f"✅  Lokalny model znaleziony: {local_dir}")
+        print(f"✅  Local model found: {local_dir}")
     else:
-        print(f"⏳  Pobieram model '{model_name}' do '{local_dir}' …")
+        print(f"⏳  Downloading model '{model_name}' do '{local_dir}' …")
         from sentence_transformers import SentenceTransformer
         SentenceTransformer(model_name).save(str(local_dir))
-        print("✅  Model pobrany i zapisany.\n")
+        print("✅  Model downloaded and saved.\n")
     # wymuszenie trybu offline dla HuggingFace Hub
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     return local_dir
