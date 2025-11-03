@@ -1,4 +1,4 @@
-# EmbedSLR &nbsp;🚀
+# EmbedSLR 2.0 &nbsp;🚀
 
 
 > **EmbedSLR** is a concise Python framework that performs **deterministic, embedding‑based ranking** of publications and a **bibliometric audit** (keywords, authors, citations) to speed up the screening phase in systematic literature reviews.
@@ -16,7 +16,7 @@
 ## ✨ Quick start (Google Colab)
 
 ```bash
-!pip install git+https://github.com/s-matysik/EmbedSLR.git
+!pip install git+https://github.com/s-matysik/EmbedSLR_v2.0.git
 from embedslr.colab_app import run
 run()
 
