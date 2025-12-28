@@ -123,9 +123,10 @@ def _embed_openai(texts, *, model, **_):
     client = OpenAI(api_key=getenv_or_raise("OPENAI_API_KEY", "OpenAI"))
     res: List[List[float]] = []
     with progress("OpenAI"):
-        for batch in chunk_iterable(texts, 1000):
+        for batch in chunk_iterable(texts, 200):
             data = client.embeddings.create(model=model, input=batch).data
             res.extend([d.embedding for d in data])
+            time.sleep(0.5)  # Rate limiting
     return res
 
 
